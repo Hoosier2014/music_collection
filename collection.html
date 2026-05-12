@@ -3462,7 +3462,7 @@
   // ── Spotify tab ───────────────────────────────────────────────────────────
   const SP_USER_TOK_KEY  = 'sp_user_token_v1';   // shared with spotify.html
   const SP_REFRESH_TOK   = 'sp_user_refresh_v1'; // shared with spotify.html
-  const SP_AUTH_REDIRECT = 'https://hoosier2014.github.io/music_collection/collection.html';
+  const SP_AUTH_REDIRECT = window.location.href.split('?')[0].split('#')[0];
   const SP_PKCE_KEY      = 'sp_pkce_verifier_coll';
 
   let spTabSearchType = 'all';
