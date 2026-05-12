@@ -2021,7 +2021,12 @@
       <button class="token-toggle" id="token-toggle-btn">🔑 API Token</button>
       <button class="token-toggle" id="spotify-toggle-btn" style="color:#1db954;border-color:#1a5c35">🎵 Spotify</button>
       <button class="token-toggle" id="excel-reload-btn" title="Reload data from your Milligan Music Emporium Excel file">📊 Update Excel</button>
+      <button class="token-toggle" id="auto-backup-btn" title="Pick your discogs-collection folder — file saves automatically after every change" style="color:#00c896;border-color:#006644">⚡ Auto-Backup</button>
+      <span id="auto-backup-status" style="font-size:0.72rem;color:var(--muted);white-space:nowrap"></span>
+      <button class="token-toggle" id="backup-data-btn" title="Download collection-data.json to commit to GitHub" style="color:#f0a500;border-color:#6b5000">💾 Backup Data</button>
+      <button class="token-toggle" id="restore-data-btn" title="Import a previously backed-up collection-data.json">📂 Restore Data</button>
     </div>
+    <input type="file" id="restore-data-input" accept=".json" style="display:none" />
     <input type="file" id="excel-file-input" accept=".xlsx,.xlsm,.xls" style="display:none" />
   </div>
 </header>
@@ -2298,6 +2303,13 @@
 <script>
   const USERNAME         = 'Hoosier2014';
   const TOKEN_KEY        = 'discogs_token_v1';
+
+  // Stub — real implementation defined later after the auto-backup engine loads.
+  // Called by saveManual/setYearOverride which are defined early in the file.
+  function scheduleAutoBackup() {
+    // Will be replaced by the real debounced function once the engine initialises.
+    if (typeof _scheduleAutoBackup === 'function') _scheduleAutoBackup();
+  }
   const YEAR_OVERRIDE_KEY = 'origYearOverrides_v1';
 
   function getYearOverrides() {
@@ -2309,6 +2321,7 @@
     if (year != null) o[String(id)] = year;
     else delete o[String(id)];
     localStorage.setItem(YEAR_OVERRIDE_KEY, JSON.stringify(o));
+    scheduleAutoBackup();
   }
   const CACHE_KEY   = 'discogs_cache_v2_' + USERNAME;
   const CACHE_TTL   = 30 * 60 * 1000; // 30 min
@@ -4195,6 +4208,7 @@
 
   function saveManual(list) {
     try { localStorage.setItem(MANUAL_KEY, JSON.stringify(list)); } catch {}
+    scheduleAutoBackup();
   }
 
   function mergeManual() {
@@ -4500,7 +4514,184 @@
   updateTokenStatus();
   loadStoredExcelLookup();   // merge any previously saved Excel data into VINYL_YEARS
 
-  load();
+  // ── Personal data backup / restore ───────────────────────────────────────
+
+  function buildBackupPayload() {
+    return {
+      version:       2,
+      savedAt:       Date.now(),
+      manualAlbums:  loadManual(),
+      yearOverrides: getYearOverrides(),
+      excelYears:    (() => { try { return JSON.parse(localStorage.getItem(EXCEL_YEARS_KEY) || '{}'); } catch { return {}; } })(),
+    };
+  }
+
+  function applyBackupPayload(data) {
+    if (Array.isArray(data.manualAlbums) && data.manualAlbums.length) {
+      const local   = loadManual();
+      const fileIds = new Set(data.manualAlbums.map(a => a.id));
+      saveManual([...data.manualAlbums, ...local.filter(a => !fileIds.has(a.id))]);
+    }
+    if (data.yearOverrides && typeof data.yearOverrides === 'object') {
+      const merged = { ...data.yearOverrides, ...getYearOverrides() };
+      localStorage.setItem(YEAR_OVERRIDE_KEY, JSON.stringify(merged));
+    }
+    if (data.excelYears && typeof data.excelYears === 'object'
+        && Object.keys(data.excelYears).length
+        && !localStorage.getItem(EXCEL_YEARS_KEY)) {
+      try { localStorage.setItem(EXCEL_YEARS_KEY, JSON.stringify(data.excelYears)); } catch {}
+    }
+  }
+
+  // ── Auto-backup via File System Access API ────────────────────────────────
+  // Stores the chosen directory handle in IndexedDB so permission persists
+  // across page reloads (Chrome/Edge only; gracefully skipped in other browsers).
+
+  const AB_IDB  = 'collection_autobackup_v1';
+  const AB_STORE = 'handles';
+
+  function abOpenDb() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open(AB_IDB, 1);
+      r.onupgradeneeded = e => e.target.result.createObjectStore(AB_STORE);
+      r.onsuccess = e => res(e.target.result);
+      r.onerror   = () => rej();
+    });
+  }
+  async function abGetHandle() {
+    try {
+      const db  = await abOpenDb();
+      return await new Promise(res => {
+        const tx = db.transaction(AB_STORE, 'readonly');
+        const req = tx.objectStore(AB_STORE).get('dir');
+        req.onsuccess = () => res(req.result || null);
+        req.onerror   = () => res(null);
+      });
+    } catch { return null; }
+  }
+  async function abStoreHandle(handle) {
+    try {
+      const db = await abOpenDb();
+      await new Promise((res, rej) => {
+        const tx = db.transaction(AB_STORE, 'readwrite');
+        tx.objectStore(AB_STORE).put(handle, 'dir');
+        tx.oncomplete = res; tx.onerror = rej;
+      });
+    } catch {}
+  }
+
+  const abStatus = document.getElementById('auto-backup-status');
+  let   abDirHandle = null;   // cached in memory after first resolve
+  let   abTimer     = null;
+
+  function abShowStatus(msg, color = 'var(--muted)') {
+    abStatus.textContent  = msg;
+    abStatus.style.color  = color;
+  }
+
+  async function abEnsureHandle() {
+    if (abDirHandle) return abDirHandle;
+    abDirHandle = await abGetHandle();
+    return abDirHandle;
+  }
+
+  async function autoBackupWrite(silent = true) {
+    const dir = await abEnsureHandle();
+    if (!dir) return false;
+    try {
+      // Re-request permission if needed (required after browser restart)
+      let perm = await dir.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await dir.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') return false;
+
+      const fh       = await dir.getFileHandle('collection-data.json', { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(JSON.stringify(buildBackupPayload(), null, 2));
+      await writable.close();
+      if (!silent) abShowStatus('✓ Saved', '#00c896');
+      else         abShowStatus('✓ Auto-saved ' + new Date().toLocaleTimeString(), '#00c896');
+      return true;
+    } catch (e) {
+      if (!silent) abShowStatus('⚠ Write failed', '#ff4466');
+      return false;
+    }
+  }
+
+  // Debounced auto-save — fires 1.5 s after the last change
+  function _scheduleAutoBackup() {
+    clearTimeout(abTimer);
+    abTimer = setTimeout(() => autoBackupWrite(true), 1500);
+  }
+
+  // Button: pick folder
+  document.getElementById('auto-backup-btn').addEventListener('click', async () => {
+    if (!('showDirectoryPicker' in window)) {
+      alert('⚠ Your browser does not support the File System Access API.\nUse Chrome or Edge on desktop, then try again.');
+      return;
+    }
+    try {
+      const dir = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
+      abDirHandle = dir;
+      await abStoreHandle(dir);
+      const ok = await autoBackupWrite(false);
+      if (ok) abShowStatus('⚡ Auto-backup active', '#00c896');
+    } catch (e) {
+      if (e.name !== 'AbortError') abShowStatus('⚠ Could not set folder', '#ff4466');
+    }
+  });
+
+  // On page load, restore the stored handle and show its status
+  abGetHandle().then(h => {
+    if (h) {
+      abDirHandle = h;
+      abShowStatus('⚡ Auto-backup ready', '#00c896');
+    }
+  });
+
+  // ── Manual backup (download) ──────────────────────────────────────────────
+  document.getElementById('backup-data-btn').addEventListener('click', () => {
+    const payload = buildBackupPayload();
+    const blob    = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a       = document.createElement('a');
+    a.href        = URL.createObjectURL(blob);
+    a.download    = 'collection-data.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  // ── Restore from file ─────────────────────────────────────────────────────
+  const restoreInput = document.getElementById('restore-data-input');
+  document.getElementById('restore-data-btn').addEventListener('click', () => restoreInput.click());
+  restoreInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.version) throw new Error('Unrecognised file');
+        applyBackupPayload(data);
+        alert('✅ Data restored! The page will now reload.');
+        location.reload();
+      } catch {
+        alert('❌ Could not read the file. Make sure it is a valid collection-data.json.');
+      }
+      restoreInput.value = '';
+    };
+    reader.readAsText(file);
+  });
+
+  // ── Auto-load from GitHub on startup ─────────────────────────────────────
+  (async () => {
+    try {
+      const resp = await fetch('./collection-data.json', { cache: 'no-cache' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.version) return;
+      applyBackupPayload(data);
+      loadStoredExcelLookup();
+    } catch { /* file absent or fetch blocked — fine */ }
+  })().then(() => load());
 
   // ── Year Quiz ─────────────────────────────────────────────────────────────
   let yqCurrent   = null;   // current album record
