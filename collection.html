@@ -4022,29 +4022,34 @@
   document.getElementById('pp-retry-btn').addEventListener('click', () => { ppLoaded = false; ppInit(); });
 
   async function ppFetchAllTracks() {
-    // Use spTabBestTok so expired tokens are refreshed automatically
-    const { tok, user } = await spTabBestTok();
+    const { tok } = await spTabBestTok();
     const headers = { Authorization: 'Bearer ' + tok };
-    console.log('ppFetchAllTracks: token type =', user ? 'USER' : 'CLIENT CREDS');
-    let   url     = `https://api.spotify.com/v1/playlists/${PP_PLAYLIST_ID}/tracks?limit=100`;
     const tracks  = [];
 
-    while (url) {
-      const res  = await fetch(url, { headers });
-      if (!res.ok) {
-        let detail = `(HTTP ${res.status})`;
-        try {
-          const body = await res.json();
-          const msg  = body?.error?.message || body?.message;
-          if (msg) detail = `"${msg}" (HTTP ${res.status})`;
-        } catch {}
-        throw new Error(`Spotify API error: ${detail}`);
-      }
-      const data = await res.json();
-      data.items.forEach(item => {
+    // Fetch the playlist object — includes first page of tracks inline
+    // and avoids the /tracks sub-endpoint which Spotify restricts for some apps
+    const plRes  = await fetch(`https://api.spotify.com/v1/playlists/${PP_PLAYLIST_ID}`, { headers });
+    console.log('/v1/playlists status:', plRes.status);
+    if (!plRes.ok) {
+      const body = await plRes.json().catch(() => ({}));
+      const msg  = body?.error?.message || '';
+      throw new Error(`Spotify API error: "${msg}" (HTTP ${plRes.status})`);
+    }
+    const plData = await plRes.json();
+
+    // First page of tracks is embedded in the playlist object
+    let page = plData.tracks;
+    while (page) {
+      (page.items || []).forEach(item => {
         if (item.track && item.track.id) tracks.push(item.track);
       });
-      url = data.next || null;
+      if (page.next) {
+        const nextRes = await fetch(page.next, { headers });
+        if (!nextRes.ok) break;
+        page = await nextRes.json();
+      } else {
+        page = null;
+      }
     }
     return tracks;
   }
