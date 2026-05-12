@@ -3978,16 +3978,18 @@
       const errEl = document.getElementById('pp-error');
       errEl.innerHTML = `
         <div style="font-size:0.9rem;color:#bb99dd;margin-bottom:18px">${err.message}</div>
-        <button onclick="spAuthStart()"
+        <button id="pp-signin-btn"
           style="background:#cc44ff;color:#fff;border:none;border-radius:9px;padding:11px 28px;font-size:0.95rem;font-weight:700;cursor:pointer;box-shadow:0 0 18px rgba(180,60,255,0.5);letter-spacing:0.02em;">
           Sign in with Spotify
         </button>
         <div style="margin-top:14px">
-          <button onclick="ppLoaded=false;ppInit()" style="background:none;border:1px solid rgba(180,60,255,0.4);color:#9966bb;border-radius:7px;padding:6px 14px;cursor:pointer;font-size:0.8rem;">
+          <button id="pp-retry-btn" style="background:none;border:1px solid rgba(180,60,255,0.4);color:#9966bb;border-radius:7px;padding:6px 14px;cursor:pointer;font-size:0.8rem;">
             ↺ Retry without signing in
           </button>
         </div>`;
       errEl.style.display = 'block';
+      document.getElementById('pp-signin-btn').addEventListener('click', spAuthStart);
+      document.getElementById('pp-retry-btn').addEventListener('click', () => { ppLoaded = false; ppInit(); });
     }
   }
 
