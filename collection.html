@@ -4022,8 +4022,11 @@
   document.getElementById('pp-retry-btn').addEventListener('click', () => { ppLoaded = false; ppInit(); });
 
   async function ppFetchAllTracks() {
-    // Prefer user OAuth token (needed for private playlists), fall back to client credentials
-    const { tok, user } = await spTabBestTok();
+    // Read user token directly from localStorage first
+    const userTok = spTabGetUserTok();
+    const tok     = userTok || (await getSpotifyToken());
+    const user    = !!userTok;
+    console.log('ppFetchAllTracks: using', user ? 'USER token ✓' : 'CLIENT CREDENTIALS (no user token found)');
     const headers = { Authorization: 'Bearer ' + tok };
     let   url     = `https://api.spotify.com/v1/playlists/${PP_PLAYLIST_ID}/tracks?limit=100`;
     const tracks  = [];
