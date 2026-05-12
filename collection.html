@@ -2091,7 +2091,20 @@
 
     <!-- Track list -->
     <div id="pp-loading"><div class="spinner" style="border-top-color:#cc44ff;margin:0 auto 12px"></div><p>Loading playlist…</p></div>
-    <div id="pp-error" style="display:none;color:#ff6080;text-align:center;padding:20px;"></div>
+
+    <!-- Sign-in panel (shown on auth error) -->
+    <div id="pp-signin-panel" style="display:none;text-align:center;padding:32px 20px;">
+      <div id="pp-error-msg" style="font-size:0.9rem;color:#bb99dd;margin-bottom:20px;"></div>
+      <button id="pp-signin-btn" style="background:#cc44ff;color:#fff;border:none;border-radius:9px;padding:13px 32px;font-size:1rem;font-weight:700;cursor:pointer;box-shadow:0 0 22px rgba(180,60,255,0.55);letter-spacing:0.02em;">
+        Sign in with Spotify
+      </button>
+      <div style="margin-top:14px">
+        <button id="pp-retry-btn" style="background:none;border:1px solid rgba(180,60,255,0.4);color:#9966bb;border-radius:7px;padding:6px 14px;cursor:pointer;font-size:0.8rem;">
+          ↺ Retry without signing in
+        </button>
+      </div>
+    </div>
+
     <div id="pp-tracks"></div>
 
   </div>
@@ -3971,31 +3984,22 @@
 
   async function ppInit() {
     if (ppLoaded) return;
-    document.getElementById('pp-loading').style.display = '';
-    document.getElementById('pp-error').style.display   = 'none';
+    document.getElementById('pp-loading').style.display      = '';
+    document.getElementById('pp-signin-panel').style.display = 'none';
     try {
       ppTracks = await ppFetchAllTracks();
       ppLoaded = true;
       ppRenderTracks();
     } catch (err) {
-      document.getElementById('pp-loading').style.display = 'none';
-      const errEl = document.getElementById('pp-error');
-      errEl.innerHTML = `
-        <div style="font-size:0.9rem;color:#bb99dd;margin-bottom:18px">${err.message}</div>
-        <button id="pp-signin-btn"
-          style="background:#cc44ff;color:#fff;border:none;border-radius:9px;padding:11px 28px;font-size:0.95rem;font-weight:700;cursor:pointer;box-shadow:0 0 18px rgba(180,60,255,0.5);letter-spacing:0.02em;">
-          Sign in with Spotify
-        </button>
-        <div style="margin-top:14px">
-          <button id="pp-retry-btn" style="background:none;border:1px solid rgba(180,60,255,0.4);color:#9966bb;border-radius:7px;padding:6px 14px;cursor:pointer;font-size:0.8rem;">
-            ↺ Retry without signing in
-          </button>
-        </div>`;
-      errEl.style.display = 'block';
-      document.getElementById('pp-signin-btn').addEventListener('click', spAuthStart);
-      document.getElementById('pp-retry-btn').addEventListener('click', () => { ppLoaded = false; ppInit(); });
+      document.getElementById('pp-loading').style.display      = 'none';
+      document.getElementById('pp-error-msg').textContent      = err.message;
+      document.getElementById('pp-signin-panel').style.display = '';
     }
   }
+
+  // Wire sign-in panel buttons once on page load
+  document.getElementById('pp-signin-btn').addEventListener('click', spAuthStart);
+  document.getElementById('pp-retry-btn').addEventListener('click', () => { ppLoaded = false; ppInit(); });
 
   async function ppFetchAllTracks() {
     // Prefer user OAuth token (needed for private playlists), fall back to client credentials
