@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spotify Player</title>
+  <script src="https://open.spotify.com/embed/iframe-api/v1" async></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #080c12; --surface: #0d1525; --surface2: #121f35;
+      --border:  #1e3a60; --accent:  #1e90ff; --text: #e0eeff;
+      --muted:   #4e7aaa; --sp: #1db954; --sp2: #158a3e;
+      --radius:  12px;    --glow: 0 0 14px rgba(30,144,255,0.4);
+    }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; display:flex; flex-direction:column; }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header { display:flex; align-items:center; justify-content:space-between; padding:12px 24px; border-bottom:1px solid var(--border); background:var(--surface); gap:12px; flex-wrap:wrap; position:sticky; top:0; z-index:100; box-shadow:0 2px 12px rgba(0,0,0,0.4); }
+    .header-brand { display:flex; align-items:center; gap:10px; }
+    .header-brand h1 { font-size:1.4rem; font-weight:700; background:linear-gradient(90deg,var(--sp),#5ade91,#b3f0cc); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .header-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .hbtn { background:none; border:1px solid var(--border); color:var(--muted); border-radius:8px; padding:6px 14px; font-size:0.8rem; cursor:pointer; transition:border-color .15s,color .15s; white-space:nowrap; }
+    .hbtn:hover { border-color:var(--accent); color:var(--accent); }
+    .hbtn.sp  { color:var(--sp); border-color:var(--sp2); }
+    .hbtn.sp:hover { border-color:var(--sp); }
+    .hbtn.accent { background:var(--sp); border-color:var(--sp); color:#fff; font-weight:600; }
+    .hbtn.accent:hover { opacity:.85; }
+    a.hbtn { text-decoration:none; }
+    #auth-user { font-size:0.8rem; color:var(--sp); }
+
+    /* ── Banners ─────────────────────────────────────────────────────────── */
+    .banner { background:var(--surface2); border-bottom:1px solid var(--border); padding:14px 24px; display:none; gap:12px; align-items:center; flex-wrap:wrap; }
+    .banner.visible { display:flex; }
+    .banner label { font-size:0.82rem; color:var(--muted); }
+    .banner input { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.85rem; padding:7px 12px; outline:none; width:200px; }
+    .banner input:focus { border-color:var(--accent); }
+    .banner-save { background:var(--accent); border:none; border-radius:8px; color:#fff; font-size:0.85rem; font-weight:600; padding:7px 18px; cursor:pointer; }
+    .banner-save:hover { opacity:.85; }
+    .banner-hint { font-size:0.76rem; color:var(--muted); }
+    .banner-hint a { color:var(--sp); }
+
+    /* OAuth redirect URI callout */
+    #redirect-uri-box { background:rgba(29,185,84,0.08); border:1px solid rgba(29,185,84,0.3); border-radius:8px; padding:8px 14px; font-size:0.78rem; color:var(--muted); }
+    #redirect-uri-box strong { color:var(--sp); font-family:monospace; font-size:0.82rem; }
+
+    /* ── Main layout ──────────────────────────────────────────────────────── */
+    #main { flex:1; display:flex; flex-direction:column; padding-bottom:170px; }
+
+    /* ── Tabs ────────────────────────────────────────────────────────────── */
+    .tab-bar { display:flex; gap:0; border-bottom:1px solid var(--border); background:var(--surface); padding:0 24px; }
+    .tab { background:none; border:none; color:var(--muted); font-size:0.9rem; padding:13px 20px; cursor:pointer; border-bottom:2px solid transparent; transition:color .15s,border-color .15s; }
+    .tab.active { color:var(--sp); border-bottom-color:var(--sp); font-weight:600; }
+    .tab:hover:not(.active) { color:var(--text); }
+
+    /* ── Search section ──────────────────────────────────────────────────── */
+    #search-section { padding:20px 24px 0; }
+    .search-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    #search-input { flex:1; min-width:220px; background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--text); font-size:1rem; padding:11px 16px; outline:none; transition:border-color .15s,box-shadow .15s; }
+    #search-input:focus { border-color:var(--sp); box-shadow:0 0 0 3px rgba(29,185,84,0.15); }
+    #search-btn { background:var(--sp); border:none; border-radius:10px; color:#fff; font-size:0.95rem; font-weight:600; padding:11px 24px; cursor:pointer; }
+    #search-btn:hover { opacity:.85; }
+    .type-pills { display:flex; gap:6px; flex-wrap:wrap; }
+    .pill { background:var(--surface); border:1px solid var(--border); color:var(--muted); border-radius:20px; padding:5px 14px; font-size:0.8rem; cursor:pointer; transition:all .15s; }
+    .pill.active { background:var(--sp); border-color:var(--sp); color:#fff; font-weight:600; }
+    .pill:hover:not(.active) { border-color:var(--sp); color:var(--sp); }
+
+    /* ── Results / playlist grid ─────────────────────────────────────────── */
+    #content-area { padding:0 24px; }
+    .section-label { font-size:0.78rem; color:var(--muted); margin:14px 0 12px; }
+    .cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(158px,1fr)); gap:14px; }
+
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; cursor:pointer; transition:border-color .15s,transform .15s,box-shadow .15s; position:relative; }
+    .card:hover { border-color:var(--sp); transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,0.4),0 0 12px rgba(29,185,84,0.18); }
+    .card.playing { border-color:var(--sp); box-shadow:0 0 0 2px var(--sp),0 6px 20px rgba(0,0,0,0.4); }
+
+    .card-img { width:100%; aspect-ratio:1; object-fit:cover; display:block; background:var(--surface2); }
+    .card-no-img { width:100%; aspect-ratio:1; background:var(--surface2); display:flex; align-items:center; justify-content:center; font-size:2.8rem; }
+    .card-overlay { position:absolute; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; font-size:2.2rem; opacity:0; transition:opacity .15s; }
+    .card:hover .card-overlay { opacity:1; }
+    .card.playing .card-overlay { opacity:1; background:rgba(0,0,0,0.3); }
+    .card-badge { position:absolute; top:7px; right:7px; background:rgba(0,0,0,0.7); border-radius:5px; font-size:0.62rem; color:var(--muted); padding:2px 6px; text-transform:uppercase; letter-spacing:.05em; }
+    .card-info { padding:9px 11px 11px; }
+    .card-name { font-size:0.83rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card-sub  { font-size:0.73rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+
+    /* ── States ──────────────────────────────────────────────────────────── */
+    .state { text-align:center; padding:50px 20px; color:var(--muted); }
+    .state .icon { font-size:2.8rem; margin-bottom:10px; }
+    .state p { font-size:0.92rem; line-height:1.5; }
+    .state .action-btn { display:inline-block; margin-top:16px; background:var(--sp); border:none; border-radius:8px; color:#fff; font-size:0.9rem; font-weight:600; padding:10px 22px; cursor:pointer; }
+    .state .action-btn:hover { opacity:.85; }
+    .state.error { color:#f48080; }
+    .spinner { width:32px; height:32px; border:3px solid var(--border); border-top-color:var(--sp); border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 12px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* ── Player panel ────────────────────────────────────────────────────── */
+    #player { position:fixed; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border); box-shadow:0 -4px 24px rgba(0,0,0,0.6); transform:translateY(100%); transition:transform .3s; z-index:200; }
+    #player.open { transform:translateY(0); }
+    #player-bar { display:flex; align-items:center; gap:12px; padding:10px 20px; }
+    #player-art { width:42px; height:42px; border-radius:6px; object-fit:cover; flex-shrink:0; background:var(--surface2); display:none; }
+    #player-info { flex:1; min-width:0; }
+    #player-name  { font-size:0.85rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #player-sub   { font-size:0.75rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #player-track { font-size:0.72rem; color:var(--sp); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #player-pp { background:none; border:none; color:var(--sp); font-size:1.2rem; cursor:pointer; padding:5px 8px; border-radius:6px; }
+    #player-pp:hover { opacity:.75; }
+    #player-chevron { background:none; border:none; color:var(--muted); font-size:1rem; cursor:pointer; padding:5px 9px; border-radius:6px; }
+    #player-chevron:hover { color:var(--text); }
+    #player-body { overflow:hidden; }
+    #player-body iframe { display:block; width:100%; height:152px; border:none; }
+    #player-body.collapsed { height:2px; }
+    #player-body.collapsed iframe { height:152px; }
+    #sp-embed-wrap { width:100%; }
+
+    /* ── OAuth popup modal ── */
+    #oauth-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:500; align-items:center; justify-content:center; }
+    #oauth-modal.visible { display:flex; }
+    .oauth-box { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:28px 32px; max-width:460px; width:90%; box-shadow:0 12px 40px rgba(0,0,0,0.6); }
+    .oauth-box h2 { font-size:1rem; margin-bottom:10px; color:var(--text); }
+    .oauth-box p  { font-size:0.83rem; color:var(--muted); line-height:1.6; margin-bottom:10px; }
+    .oauth-warn { background:rgba(255,180,0,0.08); border:1px solid rgba(255,180,0,0.25); border-radius:8px; padding:10px 14px; font-size:0.8rem; color:#f0b030; margin-bottom:14px; line-height:1.5; }
+    .oauth-warn code { background:rgba(255,255,255,0.07); border-radius:4px; padding:1px 5px; font-size:0.78rem; }
+    .oauth-paste-row { display:flex; gap:8px; margin-top:6px; }
+    .oauth-paste-row input { flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:0.84rem; padding:8px 12px; outline:none; }
+    .oauth-paste-row input:focus { border-color:var(--sp); }
+    .oauth-paste-row button { background:var(--sp); border:none; border-radius:8px; color:#fff; font-weight:600; font-size:0.84rem; padding:8px 16px; cursor:pointer; white-space:nowrap; }
+    .oauth-paste-row button:hover { opacity:.85; }
+    .oauth-cancel { margin-top:14px; background:none; border:1px solid var(--border); border-radius:8px; color:var(--muted); font-size:0.82rem; padding:7px 16px; cursor:pointer; }
+    .oauth-cancel:hover { border-color:var(--text); color:var(--text); }
+    .oauth-status { font-size:0.8rem; margin-top:10px; min-height:1.2em; }
+    .oauth-status.ok  { color:var(--sp); }
+    .oauth-status.err { color:#f48080; }
+    .oauth-cmd { background:rgba(0,0,0,0.35); border:1px solid var(--border); border-radius:7px; padding:9px 13px; font-family:monospace; font-size:0.82rem; color:#b0d8ff; margin-top:6px; word-break:break-all; user-select:all; }
+    .oauth-cmd:hover { border-color:var(--accent); }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header>
+  <div class="header-brand">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="#1db954">
+      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+    </svg>
+    <h1>Spotify Player</h1>
+  </div>
+  <div class="header-actions">
+    <span id="auth-user"></span>
+    <button class="hbtn" id="creds-btn">⚙ API Credentials</button>
+    <button class="hbtn sp" id="signin-btn">Sign In with Spotify</button>
+    <button class="hbtn" id="signout-btn" style="display:none">Sign Out</button>
+    <a class="hbtn" href="collection.html">← Collection</a>
+  </div>
+</header>
+
+<!-- ── API Credentials banner ─────────────────────────────────────────── -->
+<div class="banner" id="creds-banner">
+  <label>Client ID</label>
+  <input type="text"     id="cred-id"     placeholder="Paste Client ID…"     autocomplete="off" />
+  <label>Client Secret</label>
+  <input type="password" id="cred-secret"  placeholder="Paste Client Secret…" autocomplete="off" />
+  <button class="banner-save" id="creds-save">Save</button>
+  <div id="redirect-uri-box">
+    Add this Redirect URI to your Spotify app:<br>
+    <strong id="redirect-uri-display"></strong>
+  </div>
+  <span class="banner-hint">
+    Get credentials at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a>
+    → Create App → add the Redirect URI above → copy Client ID &amp; Secret.
+  </span>
+</div>
+
+<!-- ── Main ───────────────────────────────────────────────────────────── -->
+<div id="main">
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab active" data-tab="search">🔍 Search</button>
+    <button class="tab" data-tab="playlists">📋 My Playlists</button>
+  </div>
+
+  <!-- Search tab -->
+  <div id="tab-search">
+    <div id="search-section">
+      <div class="search-row">
+        <input id="search-input" type="search" placeholder="Search songs, albums, artists, playlists…" autocomplete="off" />
+        <button id="search-btn">Search</button>
+      </div>
+      <div class="type-pills">
+        <button class="pill active" data-type="all">All</button>
+        <button class="pill" data-type="track">Songs</button>
+        <button class="pill" data-type="album">Albums</button>
+        <button class="pill" data-type="artist">Artists</button>
+        <button class="pill" data-type="playlist">Playlists</button>
+      </div>
+    </div>
+    <div id="content-area">
+      <div id="search-state" class="state">
+        <div class="icon">🎵</div>
+        <p>Search for anything on Spotify</p>
+      </div>
+      <div id="search-loading" class="state" style="display:none">
+        <div class="spinner"></div><p>Searching…</p>
+      </div>
+      <div id="search-error" class="state error" style="display:none">
+        <div class="icon">⚠️</div><p id="search-error-text"></p>
+      </div>
+      <div id="search-label" class="section-label" style="display:none"></div>
+      <div id="search-grid" class="cards-grid" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- My Playlists tab -->
+  <div id="tab-playlists" style="display:none">
+    <div id="content-area-pl">
+      <div id="pl-signin-state" class="state" style="display:none">
+        <div class="icon">🔐</div>
+        <p>Sign in with your Spotify account to see your playlists.</p>
+        <button class="action-btn" id="pl-signin-btn">Sign In with Spotify</button>
+      </div>
+      <div id="pl-loading" class="state" style="display:none">
+        <div class="spinner"></div><p>Loading your playlists…</p>
+      </div>
+      <div id="pl-error" class="state error" style="display:none">
+        <div class="icon">⚠️</div><p id="pl-error-text"></p>
+      </div>
+      <div id="pl-label" class="section-label" style="display:none"></div>
+      <div id="pl-grid" class="cards-grid" style="padding:0 0 20px; display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Player ──────────────────────────────────────────────────────────── -->
+<div id="player">
+  <div id="player-bar">
+    <img id="player-art" src="" alt="" />
+    <div id="player-info">
+      <div id="player-name"></div>
+      <div id="player-sub"></div>
+      <div id="player-track"></div>
+    </div>
+    <button id="player-pp" title="Play / Pause">⏸</button>
+    <button id="player-chevron" title="Minimize">⌄</button>
+  </div>
+  <div id="player-body">
+    <div id="sp-embed-wrap"></div>
+  </div>
+</div>
+
+<!-- OAuth modal -->
+<div id="oauth-modal">
+  <div class="oauth-box">
+
+    <!-- shown when page is served over localhost / https — normal popup flow -->
+    <div id="oauth-normal-flow">
+      <h2>🎵 Connecting to Spotify…</h2>
+      <p>A Spotify sign-in window has opened. Complete the login there, then come back here.</p>
+      <p style="margin-bottom:4px;margin-top:10px">Or paste the redirect URL if the popup doesn't close automatically:</p>
+      <div class="oauth-paste-row">
+        <input type="text" id="oauth-paste-input" placeholder="https://…?code=…" autocomplete="off" />
+        <button id="oauth-paste-btn">Connect</button>
+      </div>
+    </div>
+
+    <!-- shown when page is opened as a file:// URL -->
+    <div id="oauth-file-flow" style="display:none">
+      <h2>⚠️ Local file detected</h2>
+      <p>Browsers <strong>block</strong> Spotify from redirecting back to a <code>file://</code> URL — that's why nothing happens after you click Agree.</p>
+      <p style="margin-top:12px"><strong>Fix:</strong> serve this page over localhost instead.</p>
+      <p style="margin-top:8px;font-size:0.78rem;color:var(--muted)">1. Open Terminal and run:</p>
+      <div class="oauth-cmd" id="oauth-cmd-line"></div>
+      <p style="margin-top:10px;font-size:0.78rem;color:var(--muted)">2. Open in your browser:</p>
+      <div class="oauth-cmd" id="oauth-localhost-url"></div>
+      <p style="margin-top:10px;font-size:0.78rem;color:var(--muted)">3. In your <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener" style="color:var(--sp)">Spotify app dashboard</a>, add this Redirect URI:</p>
+      <div class="oauth-cmd" id="oauth-redirect-uri-show"></div>
+    </div>
+
+    <div class="oauth-status" id="oauth-status"></div>
+    <button class="oauth-cancel" id="oauth-cancel-btn" style="margin-top:12px">Close</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Constants ───────────────────────────────────────────────────────────────
+const SP_CREDS_KEY   = 'spotify_creds_v1';     // shared with collection.html
+const SP_TOKEN_KEY   = 'spotify_token_v1';     // client-credentials cache
+const SP_USER_KEY    = 'sp_user_token_v1';     // OAuth user access token
+const SP_REFRESH_KEY = 'sp_user_refresh_v1';   // OAuth refresh token
+const SP_VERIFIER    = 'sp_pkce_verifier';     // PKCE code verifier (sessionStorage)
+
+// Strip any query string / hash so the redirect URI is always the bare page URL.
+// Using href directly (not origin+pathname) works correctly for file:// URLs
+// where window.location.origin returns the literal string "null".
+const REDIRECT_URI = window.location.href.split('?')[0].split('#')[0];
+
+// ── Display the redirect URI ─────────────────────────────────────────────
+document.getElementById('redirect-uri-display').textContent = REDIRECT_URI;
+
+// ── Credential helpers ───────────────────────────────────────────────────
+function getCreds()         { try { return JSON.parse(localStorage.getItem(SP_CREDS_KEY)) || null; } catch { return null; } }
+function hasCreds()         { return !!getCreds(); }
+function saveCreds(id, sec) { localStorage.setItem(SP_CREDS_KEY, JSON.stringify({id,secret:sec})); localStorage.removeItem(SP_TOKEN_KEY); }
+
+// ── Client-credentials token ─────────────────────────────────────────────
+async function getClientToken() {
+  try {
+    const c = JSON.parse(localStorage.getItem(SP_TOKEN_KEY));
+    if (c && c.exp > Date.now()) return c.tok;
+  } catch {}
+  const creds = getCreds();
+  if (!creds) throw new Error('no-creds');
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/x-www-form-urlencoded', 'Authorization':'Basic ' + btoa(creds.id+':'+creds.secret) },
+    body: 'grant_type=client_credentials',
+  });
+  if (!res.ok) throw new Error('auth-failed');
+  const d = await res.json();
+  localStorage.setItem(SP_TOKEN_KEY, JSON.stringify({ tok: d.access_token, exp: Date.now()+(d.expires_in-60)*1000 }));
+  return d.access_token;
+}
+
+// ── User OAuth helpers ───────────────────────────────────────────────────
+function getUserToken() {
+  try { const c = JSON.parse(localStorage.getItem(SP_USER_KEY)); return (c && c.exp > Date.now()) ? c.tok : null; } catch { return null; }
+}
+function getUserRefresh() { return localStorage.getItem(SP_REFRESH_KEY); }
+function saveUserToken(tok, exp) { localStorage.setItem(SP_USER_KEY, JSON.stringify({tok, exp: Date.now()+(exp-60)*1000})); }
+function clearUserSession() { localStorage.removeItem(SP_USER_KEY); localStorage.removeItem(SP_REFRESH_KEY); }
+
+async function refreshUserToken() {
+  const refresh = getUserRefresh();
+  const creds   = getCreds();
+  if (!refresh || !creds) return null;
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type:'refresh_token', refresh_token:refresh, client_id:creds.id }),
+  });
+  if (!res.ok) { clearUserSession(); return null; }
+  const d = await res.json();
+  saveUserToken(d.access_token, d.expires_in);
+  if (d.refresh_token) localStorage.setItem(SP_REFRESH_KEY, d.refresh_token);
+  return d.access_token;
+}
+
+async function getBestToken() {
+  let tok = getUserToken();
+  if (!tok) tok = await refreshUserToken();
+  if (!tok) tok = await getClientToken();  // fallback: client credentials
+  return tok;
+}
+
+// ── PKCE OAuth flow ──────────────────────────────────────────────────────
+function b64url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+function rndBytes(n) { const a = new Uint8Array(n); crypto.getRandomValues(a); return a; }
+async function pkceChallenge(verifier) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return b64url(buf);
+}
+
+let oauthPopup        = null;
+let oauthPollInterval = null;
+let oauthMsgHandler   = null;
+
+function closeOAuthModal() {
+  document.getElementById('oauth-modal').classList.remove('visible');
+  document.getElementById('oauth-status').textContent = '';
+  const pi = document.getElementById('oauth-paste-input');
+  if (pi) pi.value = '';
+  if (oauthPollInterval) { clearInterval(oauthPollInterval); oauthPollInterval = null; }
+  if (oauthMsgHandler)   { window.removeEventListener('message', oauthMsgHandler); oauthMsgHandler = null; }
+  if (oauthPopup && !oauthPopup.closed) { oauthPopup.close(); }
+  oauthPopup = null;
+}
+
+async function startOAuth() {
+  if (!hasCreds()) { showCreds(); return; }
+  const verifier  = b64url(rndBytes(96));
+  const challenge = await pkceChallenge(verifier);
+  sessionStorage.setItem(SP_VERIFIER, verifier);
+  const params = new URLSearchParams({
+    client_id:             getCreds().id,
+    response_type:         'code',
+    redirect_uri:          REDIRECT_URI,
+    code_challenge_method: 'S256',
+    code_challenge:        challenge,
+    scope:                 'playlist-read-private playlist-read-collaborative user-read-private user-read-email',
+  });
+  const authUrl = 'https://accounts.spotify.com/authorize?' + params;
+
+  const isFile = window.location.protocol === 'file:';
+
+  // If running as file://, we can't complete OAuth — explain how to fix it instead.
+  if (isFile) {
+    const dir = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+    const localhostUrl = 'http://localhost:8080/spotify.html';
+    const localhostRedirect = 'http://localhost:8080/spotify.html';
+    document.getElementById('oauth-cmd-line').textContent      = `cd "${dir}" && python3 -m http.server 8080`;
+    document.getElementById('oauth-localhost-url').textContent  = localhostUrl;
+    document.getElementById('oauth-redirect-uri-show').textContent = localhostRedirect;
+    document.getElementById('oauth-normal-flow').style.display = 'none';
+    document.getElementById('oauth-file-flow').style.display   = '';
+    document.getElementById('oauth-modal').classList.add('visible');
+    return; // Don't bother opening a popup — it won't work.
+  }
+
+  // Open a popup so the main page doesn't navigate away
+  oauthPopup = window.open(authUrl, 'spotify_auth', 'width=500,height=720,left=200,top=80');
+
+  // Show the helper modal (normal flow)
+  const modal = document.getElementById('oauth-modal');
+  document.getElementById('oauth-normal-flow').style.display = '';
+  document.getElementById('oauth-file-flow').style.display   = 'none';
+  modal.classList.add('visible');
+
+  // Listen for postMessage from the popup (popup detected it has ?code= and relays it)
+  oauthMsgHandler = async evt => {
+    if (!evt.data || evt.data.type !== 'sp_oauth') return;
+    closeOAuthModal();
+    await exchangeCode(evt.data.code);
+  };
+  window.addEventListener('message', oauthMsgHandler);
+
+  // Poll the popup's URL as a fallback — catches browsers that do follow file:// redirects
+  oauthPollInterval = setInterval(() => {
+    if (!oauthPopup || oauthPopup.closed) {
+      clearInterval(oauthPollInterval); oauthPollInterval = null;
+      return;
+    }
+    try {
+      const url = oauthPopup.location.href;
+      if (url && url.includes('code=')) {
+        const code = new URL(url).searchParams.get('code');
+        if (code) {
+          const pop = oauthPopup;
+          oauthPopup = null;
+          pop.close();
+          clearInterval(oauthPollInterval); oauthPollInterval = null;
+          window.removeEventListener('message', oauthMsgHandler); oauthMsgHandler = null;
+          document.getElementById('oauth-modal').classList.remove('visible');
+          exchangeCode(code);
+        }
+      }
+    } catch { /* cross-origin — ignore until redirect lands */ }
+  }, 600);
+}
+
+// exchangeCode: shared handler used by popup postMessage, poll fallback, and manual paste
+async function exchangeCode(code) {
+  const statusEl = document.getElementById('oauth-status');
+  statusEl.textContent = 'Connecting…';
+  statusEl.className   = 'oauth-status';
+
+  const verifier = sessionStorage.getItem(SP_VERIFIER);
+  sessionStorage.removeItem(SP_VERIFIER);
+  const creds = getCreds();
+  if (!verifier || !creds) {
+    statusEl.textContent = 'OAuth failed — missing credentials or verifier.';
+    statusEl.className   = 'oauth-status err';
+    return;
+  }
+
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method:  'POST',
+    headers: { 'Content-Type':'application/x-www-form-urlencoded' },
+    body:    new URLSearchParams({ grant_type:'authorization_code', code, redirect_uri:REDIRECT_URI, client_id:creds.id, code_verifier:verifier }),
+  });
+  if (!res.ok) {
+    statusEl.textContent = 'Token exchange failed — please try signing in again.';
+    statusEl.className   = 'oauth-status err';
+    return;
+  }
+  const d = await res.json();
+  saveUserToken(d.access_token, d.expires_in);
+  if (d.refresh_token) localStorage.setItem(SP_REFRESH_KEY, d.refresh_token);
+
+  closeOAuthModal();
+  await loadUserProfile();
+  loadPlaylists();
+}
+
+// handleOAuthCallback: fallback for when the main page itself receives ?code= (direct redirect)
+async function handleOAuthCallback() {
+  const params   = new URLSearchParams(window.location.search);
+  const code     = params.get('code');
+  const errParam = params.get('error');
+  if (errParam) { window.history.replaceState({}, '', REDIRECT_URI); return; }
+  if (!code)    return;
+  window.history.replaceState({}, '', REDIRECT_URI);
+  await exchangeCode(code);
+}
+
+// ── User profile ─────────────────────────────────────────────────────────
+let userProfile = null;
+async function loadUserProfile() {
+  const tok = getUserToken() || await refreshUserToken();
+  if (!tok) return;
+  try {
+    const res = await fetch('https://api.spotify.com/v1/me', { headers: { Authorization:'Bearer '+tok } });
+    if (!res.ok) return;
+    userProfile = await res.json();
+    document.getElementById('auth-user').textContent = '👤 ' + (userProfile.display_name || userProfile.id);
+    document.getElementById('signin-btn').style.display  = 'none';
+    document.getElementById('signout-btn').style.display = '';
+  } catch {}
+}
+
+// ── Credentials UI ───────────────────────────────────────────────────────
+function showCreds() { document.getElementById('creds-banner').classList.add('visible'); }
+
+document.getElementById('creds-btn').addEventListener('click', () => {
+  const b = document.getElementById('creds-banner');
+  b.classList.toggle('visible');
+  if (b.classList.contains('visible')) {
+    const c = getCreds();
+    if (c) { document.getElementById('cred-id').value = c.id; document.getElementById('cred-secret').value = c.secret; }
+  }
+});
+
+document.getElementById('creds-save').addEventListener('click', () => {
+  const id  = document.getElementById('cred-id').value.trim();
+  const sec = document.getElementById('cred-secret').value.trim();
+  if (!id || !sec) return;
+  saveCreds(id, sec);
+  document.getElementById('creds-banner').classList.remove('visible');
+});
+
+document.getElementById('signin-btn').addEventListener('click', startOAuth);
+document.getElementById('pl-signin-btn').addEventListener('click', startOAuth);
+
+// OAuth modal buttons
+document.getElementById('oauth-cancel-btn').addEventListener('click', closeOAuthModal);
+
+document.getElementById('oauth-paste-btn').addEventListener('click', async () => {
+  const raw = document.getElementById('oauth-paste-input').value.trim();
+  if (!raw) return;
+  let code = null;
+  try {
+    code = new URL(raw).searchParams.get('code');
+  } catch {
+    // maybe they pasted just the query string portion
+    try { code = new URLSearchParams(raw.includes('?') ? raw.split('?')[1] : raw).get('code'); } catch {}
+  }
+  if (!code) {
+    const s = document.getElementById('oauth-status');
+    s.textContent = "Could not find a code= in that URL — paste the full redirect URL from the popup’s address bar.";
+    s.className   = 'oauth-status err';
+    return;
+  }
+  closeOAuthModal();
+  await exchangeCode(code);
+});
+
+document.getElementById('signout-btn').addEventListener('click', () => {
+  clearUserSession();
+  userProfile = null;
+  document.getElementById('auth-user').textContent         = '';
+  document.getElementById('signin-btn').style.display      = '';
+  document.getElementById('signout-btn').style.display     = 'none';
+  showPlState('signin');
+});
+
+// ── Tabs ─────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-search').style.display    = tab === 'search'    ? '' : 'none';
+    document.getElementById('tab-playlists').style.display = tab === 'playlists' ? '' : 'none';
+    if (tab === 'playlists') onPlaylistsTabOpen();
+  });
+});
+
+// ── Type pills ───────────────────────────────────────────────────────────
+let activeType = 'all';
+document.querySelectorAll('.pill').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    b.classList.add('active');
+    activeType = b.dataset.type;
+  });
+});
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function artUrl(item) {
+  const imgs = item.images || item.album?.images || [];
+  return (imgs[0] || imgs[1] || {}).url || '';
+}
+function artistLine(item) {
+  if (item.type === 'artist')   return (item.genres||[]).slice(0,2).join(', ') || 'Artist';
+  if (item.type === 'playlist') return item.owner?.display_name || '';
+  return (item.artists||[]).map(a=>a.name).join(', ');
+}
+function typeLabel(t) { return {track:'Song',album:'Album',artist:'Artist',playlist:'Playlist'}[t]||t; }
+function icon(t)      { return {track:'🎵',album:'💿',artist:'🎤',playlist:'📋'}[t]||'🎵'; }
+function uri(item)    { return `spotify:${item.type}:${item.id}`; }
+
+// ── State helpers for search tab ──────────────────────────────────────────
+function showSearchState(s) {
+  document.getElementById('search-state').style.display   = s==='idle'    ? '' : 'none';
+  document.getElementById('search-loading').style.display = s==='loading' ? '' : 'none';
+  document.getElementById('search-error').style.display   = s==='error'   ? '' : 'none';
+  document.getElementById('search-label').style.display   = s==='results' ? '' : 'none';
+  document.getElementById('search-grid').style.display    = s==='results' ? 'grid' : 'none';
+}
+function showError(where, msg) {
+  if (where === 'search') {
+    document.getElementById('search-error-text').textContent = msg;
+    showSearchState('error');
+  } else {
+    document.getElementById('pl-error-text').textContent = msg;
+    showPlState('error');
+  }
+}
+
+// ── State helpers for playlists tab ───────────────────────────────────────
+function showPlState(s) {
+  document.getElementById('pl-signin-state').style.display = s==='signin'   ? '' : 'none';
+  document.getElementById('pl-loading').style.display      = s==='loading'  ? '' : 'none';
+  document.getElementById('pl-error').style.display        = s==='error'    ? '' : 'none';
+  document.getElementById('pl-label').style.display        = s==='results'  ? '' : 'none';
+  document.getElementById('pl-grid').style.display         = s==='results'  ? 'grid' : 'none';
+}
+
+// ── Search ────────────────────────────────────────────────────────────────
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+
+  showSearchState('loading');
+
+  let tok;
+  try { tok = await getBestToken(); }
+  catch(e) {
+    if (e.message === 'no-creds') showError('search', 'Add your Spotify API credentials first (⚙ API Credentials button).');
+    else                          showError('search', 'Authentication failed — check your credentials.');
+    return;
+  }
+
+  // market=from_token only works with a user OAuth token; omit it for client credentials
+  const hasUserTok = !!(getUserToken() || getUserRefresh());
+  const marketParam = hasUserTok ? '&market=from_token' : '';
+  const types = activeType === 'all' ? 'track,album,artist,playlist' : activeType;
+  try {
+    const res  = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=${types}&limit=20${marketParam}`, {
+      headers: { Authorization: 'Bearer ' + tok }
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      // If search fails with 401/403, retry without playlists (client-creds restriction)
+      if (activeType === 'all' && (data.error.status === 401 || data.error.status === 403)) {
+        const res2 = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track,album,artist&limit=20`, {
+          headers: { Authorization: 'Bearer ' + tok }
+        });
+        const data2 = await res2.json();
+        if (data2.error) { showError('search', `Spotify error: ${data2.error.message}`); return; }
+        renderSearchResults(flattenResults(data2), q);
+      } else {
+        showError('search', `Spotify error ${data.error.status}: ${data.error.message}`);
+      }
+      return;
+    }
+
+    renderSearchResults(flattenResults(data), q);
+  } catch(e) {
+    showError('search', 'Network error — check your connection.');
+    console.error(e);
+  }
+}
+
+function flattenResults(data) {
+  const items = [];
+  for (const key of ['tracks','albums','artists','playlists']) {
+    if (data[key]) {
+      data[key].items.filter(Boolean).forEach(it => {
+        it.type = it.type || key.slice(0,-1);
+        items.push(it);
+      });
+    }
+  }
+  return items;
+}
+
+function renderSearchResults(items, q) {
+  if (!items.length) {
+    document.getElementById('search-state').innerHTML = `<div class="icon">🔍</div><p>No results for "<strong>${esc(q)}</strong>"</p>`;
+    showSearchState('idle'); return;
+  }
+  document.getElementById('search-label').textContent = `${items.length} result${items.length!==1?'s':''} for "${q}"`;
+  renderGrid('search-grid', items);
+  showSearchState('results');
+}
+
+// ── My Playlists ──────────────────────────────────────────────────────────
+let playlistsLoaded = false;
+async function onPlaylistsTabOpen() {
+  if (!getUserToken() && !getUserRefresh()) { showPlState('signin'); return; }
+  if (playlistsLoaded) return;
+  loadPlaylists();
+}
+
+async function loadPlaylists() {
+  showPlState('loading');
+  const tok = getUserToken() || await refreshUserToken();
+  if (!tok) { showPlState('signin'); return; }
+  try {
+    const all = [];
+    let url   = 'https://api.spotify.com/v1/me/playlists?limit=50';
+    while (url) {
+      const res = await fetch(url, { headers: { Authorization:'Bearer '+tok } });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const d = await res.json();
+      (d.items||[]).filter(Boolean).forEach(p => { p.type = 'playlist'; all.push(p); });
+      url = d.next || null;
+    }
+    if (!all.length) {
+      document.getElementById('pl-label').textContent = 'No playlists found.';
+      showPlState('results'); return;
+    }
+    document.getElementById('pl-label').textContent = `${all.length} playlist${all.length!==1?'s':''}`;
+    renderGrid('pl-grid', all);
+    showPlState('results');
+    playlistsLoaded = true;
+  } catch(e) {
+    showError('pl', `Failed to load playlists: ${e.message}`);
+    console.error(e);
+  }
+}
+
+// ── Grid renderer ─────────────────────────────────────────────────────────
+let currentId = null;
+function renderGrid(gridId, items) {
+  const grid = document.getElementById(gridId);
+  grid.innerHTML = items.map(item => {
+    const art  = artUrl(item);
+    const name = esc(item.name||'');
+    const sub  = esc(artistLine(item));
+    const type = item.type;
+    const id   = item.id;
+    const artEl = art
+      ? `<img class="card-img" src="${art}" alt="${name}" loading="lazy" />`
+      : `<div class="card-no-img">${icon(type)}</div>`;
+    const playIcon = id === currentId ? '⏸' : '▶';
+    return `<div class="card${id===currentId?' playing':''}" data-id="${id}" data-type="${type}" data-name="${name}" data-sub="${sub}" data-art="${art}" data-uri="spotify:${type}:${id}">
+      ${artEl}
+      <div class="card-overlay">${playIcon}</div>
+      <span class="card-badge">${typeLabel(type)}</span>
+      <div class="card-info"><div class="card-name">${name}</div><div class="card-sub">${sub}</div></div>
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('.card').forEach(card => card.addEventListener('click', () => onCardClick(card)));
+}
+
+// ── Playback ──────────────────────────────────────────────────────────────
+let spIFrameAPI  = null;
+let spController = null;
+let spPaused     = true;
+let spTracks     = [];   // [{name, duration_ms}]
+let pendingPlay  = null;
+
+window.onSpotifyIframeApiReady = api => {
+  spIFrameAPI = api;
+  if (pendingPlay) { createController(pendingPlay); pendingPlay = null; }
+};
+
+function onCardClick(card) {
+  const id   = card.dataset.id;
+  const type = card.dataset.type;
+  const name = card.dataset.name;
+  const sub  = card.dataset.sub;
+  const art  = card.dataset.art;
+  const spUri = card.dataset.uri;
+
+  // Mark playing card
+  document.querySelectorAll('.card').forEach(c => { c.classList.remove('playing'); c.querySelector('.card-overlay').textContent = '▶'; });
+  card.classList.add('playing');
+  card.querySelector('.card-overlay').textContent = '⏸';
+  currentId = id;
+
+  // Update player bar info
+  const artEl = document.getElementById('player-art');
+  artEl.src = art; artEl.style.display = art ? '' : 'none';
+  document.getElementById('player-name').textContent  = name;
+  document.getElementById('player-sub').textContent   = sub;
+  document.getElementById('player-track').textContent = '';
+
+  // Fetch album track metadata for now-playing track display
+  spTracks = [];
+  if (type === 'album') fetchTrackMeta(id).then(t => { spTracks = t; });
+
+  createController({ uri: spUri });
+  openPlayer();
+}
+
+function createController({ uri }) {
+  if (!spIFrameAPI) { pendingPlay = { uri }; return; }
+  const wrap = document.getElementById('sp-embed-wrap');
+  wrap.innerHTML = '';
+  spController = null;
+  spIFrameAPI.createController(wrap, { uri }, ctrl => {
+    spController = ctrl;
+    spPaused = false;
+    document.getElementById('player-pp').textContent = '⏸';
+    ctrl.addListener('playback_update', e => {
+      spPaused = e.data.isPaused;
+      document.getElementById('player-pp').textContent = spPaused ? '▶' : '⏸';
+      if (e.data.duration && spTracks.length) {
+        const match = spTracks.find(t => Math.abs(t.duration_ms - e.data.duration) < 2000);
+        document.getElementById('player-track').textContent = match ? '♪ ' + match.name : '';
+      }
+    });
+  });
+}
+
+async function fetchTrackMeta(albumId) {
+  try {
+    const tok = await getBestToken();
+    const res = await fetch(`https://api.spotify.com/v1/albums/${albumId}/tracks?limit=50`, { headers:{Authorization:'Bearer '+tok} });
+    const d   = await res.json();
+    return (d.items||[]).map(t => ({ name:t.name, duration_ms:t.duration_ms }));
+  } catch { return []; }
+}
+
+// ── Player panel UI ───────────────────────────────────────────────────────
+let playerExpanded = true;
+function openPlayer() {
+  document.getElementById('player').classList.add('open');
+  setExpanded(true);
+}
+function setExpanded(on) {
+  playerExpanded = on;
+  document.getElementById('player-body').classList.toggle('collapsed', !on);
+  document.getElementById('player-chevron').textContent = on ? '⌄' : '⌃';
+  document.getElementById('player-chevron').title       = on ? 'Minimize' : 'Expand';
+}
+document.getElementById('player-chevron').addEventListener('click', e => { e.stopPropagation(); setExpanded(!playerExpanded); });
+document.getElementById('player-bar').addEventListener('click', () => { if (!playerExpanded) setExpanded(true); });
+document.getElementById('player-pp').addEventListener('click', e => { e.stopPropagation(); spController?.togglePlay(); });
+
+// ── Keyboard shortcut ─────────────────────────────────────────────────────
+document.getElementById('search-btn').addEventListener('click', doSearch);
+document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+// ── Init ──────────────────────────────────────────────────────────────────
+(async () => {
+  // 0. Popup detection: if this page was opened by startOAuth() and received the
+  //    OAuth redirect, relay the code to the opener and close immediately.
+  if (window.opener) {
+    const sp = new URLSearchParams(window.location.search);
+    const pCode = sp.get('code');
+    const pErr  = sp.get('error');
+    if (pCode || pErr) {
+      if (pCode) window.opener.postMessage({ type: 'sp_oauth', code: pCode }, '*');
+      // Give postMessage a tick to deliver, then close
+      setTimeout(() => window.close(), 200);
+      return; // stop — nothing else to init in the popup
+    }
+  }
+
+  // 1. Handle OAuth redirect callback (fallback: main page received ?code= directly)
+  if (window.location.search.includes('code=') || window.location.search.includes('error=')) {
+    await handleOAuthCallback();
+  }
+
+  // 2. Restore user session if token is cached
+  const tok = getUserToken();
+  if (tok) {
+    await loadUserProfile();
+  } else {
+    const refreshed = await refreshUserToken();
+    if (refreshed) await loadUserProfile();
+  }
+
+  // 3. Focus search
+  document.getElementById('search-input').focus();
+})();
+</script>
+</body>
+</html>
