@@ -4022,12 +4022,16 @@
   document.getElementById('pp-retry-btn').addEventListener('click', () => { ppLoaded = false; ppInit(); });
 
   async function ppFetchAllTracks() {
-    // Read user token directly from localStorage first
     const userTok = spTabGetUserTok();
     const tok     = userTok || (await getSpotifyToken());
-    const user    = !!userTok;
-    console.log('ppFetchAllTracks: using', user ? 'USER token ✓' : 'CLIENT CREDENTIALS (no user token found)');
     const headers = { Authorization: 'Bearer ' + tok };
+
+    // Quick sanity-check: can this token reach /v1/me?
+    if (userTok) {
+      const meRes  = await fetch('https://api.spotify.com/v1/me', { headers });
+      const meData = await meRes.json();
+      console.log('/v1/me status:', meRes.status, meData.display_name || meData.error?.message);
+    }
     let   url     = `https://api.spotify.com/v1/playlists/${PP_PLAYLIST_ID}/tracks?limit=100`;
     const tracks  = [];
 
