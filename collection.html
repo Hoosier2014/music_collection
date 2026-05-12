@@ -2095,9 +2095,9 @@
     <!-- Sign-in panel (shown on auth error) -->
     <div id="pp-signin-panel" style="display:none;text-align:center;padding:32px 20px;">
       <div id="pp-error-msg" style="font-size:0.9rem;color:#bb99dd;margin-bottom:20px;"></div>
-      <button id="pp-signin-btn" style="background:#cc44ff;color:#fff;border:none;border-radius:9px;padding:13px 32px;font-size:1rem;font-weight:700;cursor:pointer;box-shadow:0 0 22px rgba(180,60,255,0.55);letter-spacing:0.02em;">
+      <a id="pp-signin-link" href="#" style="display:inline-block;background:#cc44ff;color:#fff;text-decoration:none;border-radius:9px;padding:13px 32px;font-size:1rem;font-weight:700;cursor:pointer;box-shadow:0 0 22px rgba(180,60,255,0.55);letter-spacing:0.02em;">
         Sign in with Spotify
-      </button>
+      </a>
       <div style="margin-top:14px">
         <button id="pp-retry-btn" style="background:none;border:1px solid rgba(180,60,255,0.4);color:#9966bb;border-radius:7px;padding:6px 14px;cursor:pointer;font-size:0.8rem;">
           ↺ Retry without signing in
@@ -3973,6 +3973,7 @@
     document.getElementById('empty').style.display           = 'none';
     document.getElementById('random-view').classList.remove('visible');
     document.getElementById('psych-playlist-view').classList.add('visible');
+    ppPrepareSignInLink();
     ppInit();
   };
 
@@ -3997,8 +3998,27 @@
     }
   }
 
-  // Wire sign-in panel buttons once on page load
-  document.getElementById('pp-signin-btn').addEventListener('click', spAuthStart);
+  // Pre-build the Spotify auth URL and set it on the link so it's a plain href click
+  async function ppPrepareSignInLink() {
+    try {
+      const verifier  = _b64url(_rndBytes(96));
+      const challenge = await _pkceChallenge(verifier);
+      sessionStorage.setItem(SP_PKCE_KEY, verifier);
+      const params = new URLSearchParams({
+        client_id:             SP_CLIENT_ID,
+        response_type:         'code',
+        redirect_uri:          SP_AUTH_REDIRECT,
+        code_challenge_method: 'S256',
+        code_challenge:        challenge,
+        scope:                 'playlist-read-private playlist-read-collaborative user-read-private',
+      });
+      const link = document.getElementById('pp-signin-link');
+      if (link) link.href = 'https://accounts.spotify.com/authorize?' + params;
+    } catch (e) {
+      console.error('ppPrepareSignInLink failed:', e);
+    }
+  }
+
   document.getElementById('pp-retry-btn').addEventListener('click', () => { ppLoaded = false; ppInit(); });
 
   async function ppFetchAllTracks() {
